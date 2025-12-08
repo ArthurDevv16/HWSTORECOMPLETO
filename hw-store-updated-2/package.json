@@ -1,0 +1,24 @@
+{
+  "name": "hw-store-server",
+  "version": "1.0.0",
+  "description": "Servidor de chat para HW Store (socket.io)",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "jest",
+    "cy:open": "cypress open",
+    "cy:run": "cypress run",
+    "start:backend": "cd backend && npm run dev",
+    "start:all": "concurrently \"npm run start:backend\" \"npm run dev\""
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "socket.io": "^4.7.2",
+    "@reduxjs/toolkit": "^1.9.5",
+    "react-redux": "^8.1.1",
+    "react-router-dom": "^6.11.2"
+  },
+  "devDependencies": {
+    "concurrently": "^8.0.1"
+  }
+}

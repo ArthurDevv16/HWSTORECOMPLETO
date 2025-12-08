@@ -1,0 +1,50 @@
+
+/* improvements.css - forced dark mode and responsive fixes */
+:root{
+  --bg: #0b0f12;
+  --card: #0f1720;
+  --muted: #94a3b8;
+  --text: #e6eef6;
+  --accent: #38bdf8;
+  --danger: #ef4444;
+  --radius: 12px;
+}
+
+/* Global reset */
+*{box-sizing:border-box; margin:0; padding:0}
+html,body{height:100%; background:var(--bg); color:var(--text); font-family:Inter,Segoe UI,Roboto,Arial,Helvetica,sans-serif; -webkit-font-smoothing:antialiased}
+img,svg{max-width:100%;height:auto;display:block}
+
+/* Layout */
+.container{max-width:1200px;margin:20px auto;padding:16px}
+.header{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px;background:transparent}
+.site-brand{font-weight:700;letter-spacing:0.2px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px}
+
+/* Cards */
+.card{background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));border-radius:var(--radius);padding:12px;box-shadow:0 6px 18px rgba(2,6,23,0.6)}
+.card h3{font-size:1.05rem;margin-bottom:8px;color:var(--text)}
+
+/* Widgets fixed */
+.widget-panel{position:fixed;right:20px;bottom:20px;z-index:1400;max-width:360px;width:calc(100% - 48px)}
+#chatbox,#weather-panel{width:100%;background:var(--card);border-radius:12px;padding:0.75rem;box-shadow:0 12px 40px rgba(2,6,23,0.7)}
+
+/* Prevent elements overflowing screen */
+* {word-break:break-word}
+button, input, textarea{font:inherit}
+img.product-image{width:100%;height:200px;object-fit:cover;border-radius:8px}
+
+/* Responsive typography */
+h1{font-size:1.4rem}
+@media(min-width:900px){h1{font-size:1.8rem}}
+
+/* Chat tweaks */
+.chat-messages{max-height:320px;overflow:auto;padding:8px;display:flex;flex-direction:column;gap:8px}
+.chat-message{padding:8px;border-radius:10px;background:rgba(255,255,255,0.02);align-self:flex-start;max-width:85%}
+.chat-message.user{background:linear-gradient(90deg, rgba(56,189,248,0.12), rgba(56,189,248,0.06));align-self:flex-end}
+
+/* Tiny helpers */
+.flex{display:flex;gap:8px;align-items:center}
+.center{display:flex;align-items:center;justify-content:center}
+.small{font-size:0.85rem;color:var(--muted)}
+`

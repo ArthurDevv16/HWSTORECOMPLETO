@@ -1,0 +1,620 @@
+<!--
+HW Store — Integrado (HTML + instruções de backend)
+
+Este arquivo contém:
+  1) HTML completo (frontend) com: layout melhorado, toggle de tema, busca, produtos, modal, offcanvas cart,
+     integração de CLIMA via OpenWeather (configure sua API key na constante OPENWEATHER_API_KEY abaixo),
+     chat via Socket.IO (cliente conecta em /socket.io).
+  2) Um bloco com o código do servidor Node.js (Express + Socket.IO). Copie o bloco `server.js` para um arquivo separado.
+
+Instruções para rodar (rápido):
+  - Salve este HTML como `index.html` em uma pasta `public/`.
+  - Crie `server.js` com o código fornecido mais abaixo.
+  - npm init -y
+  - npm install express socket.io
+  - node server.js
+  - Abra http://localhost:3000
+
+
+-->
+
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>HW Store — Loja de Computadores (Integrado)</title>
+
+  <!-- Google Fonts + Material Icons -->
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&family=Roboto+Mono&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+
+  <meta name="description" content="HW Store — loja de computadores, periféricos e componentes. Template com chat por Socket.IO e clima OpenWeather." />
+  <meta name="theme-color" content="#0b3d91">
+
+  <style>
+    :root{
+      --primary:#0b3d91;
+      --accent:#0058ff;
+      --bg:#f5f7fb;
+      --card:#ffffff;
+      --muted:#6b7280;
+      --danger:#ff4d4f;
+      --radius:12px;
+      --maxw:1200px;
+      --shadow:0 10px 24px rgba(11,61,145,0.06);
+      color-scheme: light dark;
+      font-family: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+    }
+
+    /* Reset */
+    *{box-sizing:border-box}
+    html,body{height:100%;margin:0;background:var(--bg);color:#0b1b33;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}
+    a{color:inherit;text-decoration:none}
+    .container{max-width:var(--maxw);margin:0 auto;padding:1rem}
+
+    /* Topbar */
+    .topbar{display:flex;align-items:center;justify-content:space-between;padding:.75rem 1rem;gap:.75rem}
+    .logo{font-weight:800;font-size:1.25rem;display:flex;align-items:center;gap:.5rem}
+    .logo .mark{background:linear-gradient(90deg,var(--primary),var(--accent));-webkit-background-clip:text;background-clip:text;color:transparent;font-weight:900}
+    .nav{display:flex;gap:0.5rem;align-items:center}
+    .nav a{padding:0.5rem .65rem;border-radius:10px;transition:background .14s,color .14s;font-weight:600}
+    .nav a:hover{background:rgba(11,61,145,0.06)}
+    .actions{display:flex;gap:0.5rem;align-items:center}
+
+    button.icon{background:transparent;border:0;cursor:pointer;padding:.5rem;border-radius:10px}
+    button.icon:focus{outline:3px solid rgba(11,61,145,0.12)}
+
+    /* cart icon */
+    .cart-icon{position:relative;background:var(--primary);color:#fff;width:44px;height:44px;border-radius:10px;display:inline-flex;align-items:center;justify-content:center;box-shadow:var(--shadow);border:none}
+    .cart-badge{position:absolute;top:-8px;right:-8px;background:var(--danger);color:#fff;border-radius:50%;min-width:20px;height:20px;font-size:12px;display:inline-flex;align-items:center;justify-content:center;padding:0 5px}
+
+    /* layout hero */
+    .hero{display:grid;grid-template-columns:1fr 420px;gap:1.5rem;align-items:center;padding:2rem 1rem}
+    .hero h1{font-size:1.8rem;margin:0}
+    .hero p{color:var(--muted);margin:.5rem 0 1rem}
+    .hero-cta{display:flex;gap:.75rem}
+
+    /* product grid */
+    .products h2{margin:0 0 .75rem}
+    .toolbar{display:flex;gap:.5rem;align-items:center;margin-bottom:1rem}
+    .search{flex:1;display:flex;gap:.5rem}
+    .search input{flex:1;padding:.6rem .75rem;border-radius:10px;border:1px solid rgba(11,61,145,0.06)}
+
+    .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:1rem}
+
+    .product-card{background:var(--card);box-shadow:var(--shadow);border-radius:12px;padding:1rem;display:flex;flex-direction:column;gap:.6rem;transition:transform .18s,box-shadow .18s}
+    .product-card:hover{transform:translateY(-6px);box-shadow:0 20px 40px rgba(11,61,145,0.08)}
+    .product-thumb{height:140px;border-radius:10px;background:#eef6ff;display:flex;align-items:center;justify-content:center;font-weight:700;color:var(--primary)}
+    .price{font-weight:700;color:var(--primary)}
+    .product-meta{display:flex;justify-content:space-between;align-items:center;margin-top:auto}
+
+    .btn{display:inline-flex;align-items:center;gap:.5rem;padding:.55rem .75rem;border-radius:10px;border:1px solid rgba(11,61,145,0.08);background:transparent;cursor:pointer;font-weight:600}
+    .btn:hover{transform:translateY(-2px)}
+    .btn.primary{background:linear-gradient(90deg,var(--primary),var(--accent));color:#fff;border:none}
+    .btn.ghost{background:transparent;border:1px solid rgba(11,61,145,0.08)}
+
+    /* offcanvas cart */
+    .offcanvas-backdrop{position:fixed;inset:0;background:rgba(11,61,145,0.18);z-index:1100;opacity:0;pointer-events:none;transition:opacity .2s}
+    .offcanvas{position:fixed;top:0;right:0;height:100%;width:380px;max-width:96vw;background:var(--card);box-shadow:-12px 0 40px rgba(11,61,145,0.12);z-index:1200;transform:translateX(110%);transition:transform .25s;display:flex;flex-direction:column;padding:1rem;border-radius:12px 0 0 12px}
+    .offcanvas.open{transform:translateX(0)}
+    .offcanvas-backdrop.open{opacity:1;pointer-events:auto}
+    .offcanvas .cart-list{flex:1;overflow:auto;margin-top:.5rem;display:flex;flex-direction:column;gap:.75rem}
+    .cart-item{display:flex;gap:.6rem;align-items:center;background:linear-gradient(180deg,#fbfdff,#ffffff);padding:.6rem;border-radius:10px}
+    .cart-item .thumb{flex:0 0 64px;height:48px;border-radius:8px;background:#eef6ff;display:flex;align-items:center;justify-content:center;color:var(--primary);font-weight:700}
+    .qty-controls{display:flex;gap:.25rem;align-items:center}
+    .qty-controls button{padding:.25rem .5rem;border-radius:8px;border:1px solid rgba(11,61,145,0.06);background:transparent;cursor:pointer}
+
+    /* modal (product details) */
+    .modal-backdrop{position:fixed;inset:0;background:rgba(2,6,23,0.5);display:none;align-items:center;justify-content:center;z-index:1300}
+    .modal-backdrop.open{display:flex}
+    .modal{background:var(--card);padding:1rem;border-radius:12px;max-width:920px;width:95%;box-shadow:var(--shadow)}
+    .modal-grid{display:grid;grid-template-columns:320px 1fr;gap:1rem;align-items:start}
+
+    /* profile */
+    .profile-form{display:grid;grid-template-columns:repeat(2,1fr);gap:.75rem}
+    .profile-form label{display:block;font-size:.9rem}
+    .profile-form input, .profile-form select{width:100%;padding:.5rem;border-radius:8px;border:1px solid rgba(11,61,145,0.06)}
+
+    .footer{padding:1rem;text-align:center;color:var(--muted);margin-top:2rem}
+
+    /* small screens */
+    @media (max-width:980px){ .hero{grid-template-columns:1fr 320px} }
+    @media (max-width:720px){ .hero{grid-template-columns:1fr;gap:1rem}.nav{display:none} }
+
+    /* dark mode */
+    body.dark{background:#071229;color:#eaf2ff}
+    body.dark .product-card, body.dark .offcanvas, body.dark .modal{background:#0f2036}
+    body.dark .product-thumb{background:#0b2a5a;color:#d7e8ff}
+    body.dark .btn.ghost{border-color:rgba(255,255,255,0.06)}
+
+    /* chat & weather widgets */
+    .widget-panel{position:fixed;bottom:20px;right:20px;z-index:1400}
+    #chatbox,#weather-panel{width:340px;background:var(--card);border-radius:12px;padding:0.75rem;box-shadow:0 12px 40px rgba(2,6,23,0.2);color:inherit}
+    #chatbox{display:none;flex-direction:column;gap:.5rem;max-height:60vh;overflow:hidden}
+    #chat-messages{max-height:320px;overflow:auto;padding:.5rem;background:transparent}
+    .chat-input-row{display:flex;gap:.5rem;padding-top:.5rem}
+    .chat-input{flex:1;padding:.5rem;border-radius:8px;border:1px solid rgba(11,61,145,0.06)}
+    .chat-message{padding:.45rem .6rem;border-radius:8px;margin-bottom:.45rem;max-width:86%}
+    .chat-message.user{background:linear-gradient(90deg,var(--primary),var(--accent));color:#000000;margin-left:auto}
+    .chat-message.bot{background:rgba(0,0,0,0.05);color:inherit}
+
+    #weather-panel{display:none;align-items:center;gap:.5rem;padding:.8rem;min-width:260px}
+    .weather-row{display:flex;gap:.5rem;align-items:center}
+
+    /* accessibility focus */
+    :focus-visible{outline:3px solid rgba(11,61,145,0.14);outline-offset:3px}
+  </style>
+  <link rel="stylesheet" href="assets/css/improvements.css">
+</head>
+<body class="light">
+  <header class="topbar container">
+    <div class="logo" aria-hidden>
+      <div class="mark">HW</div>
+      <div>Store</div>
+    </div>
+
+    <nav class="nav" aria-label="Menu principal">
+      <a href="#home">Início</a>
+      <a href="#products">Produtos</a>
+      <a href="#profile">Perfil</a>
+      <a href="#" id="open-weather-btn">Clima</a>
+      <a href="#" id="open-chat-btn">Chat</a>
+    </nav>
+
+    <div class="actions">
+      <div class="search" style="max-width:420px;">
+        <input id="search-input" type="search" placeholder="Buscar produtos, ex: 'notebook'..." aria-label="Buscar produtos">
+      </div>
+
+      <button class="icon" id="theme-toggle" aria-pressed="false" title="Alternar tema">
+        <span class="material-icons" aria-hidden>brightness_6</span>
+      </button>
+
+      <button class="icon cart-icon" id="open-cart" aria-label="Abrir carrinho">
+        <span class="material-icons" aria-hidden>shopping_cart</span>
+        <span class="cart-badge" id="cart-count" style="display:none">0</span>
+      </button>
+
+      <button class="icon" id="menu-toggle" aria-expanded="false" aria-controls="mobile-nav" title="Abrir menu">
+        <span class="material-icons">menu</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- Mobile nav -->
+  <div id="mobile-nav" style="display:none;padding:1rem;background:var(--card);box-shadow:var(--shadow);border-radius:10px;margin:.5rem 1rem;">
+    <a href="#home">Início</a> • <a href="#products">Produtos</a> • <a href="#profile">Perfil</a>
+  </div>
+
+  <main id="main">
+    <!-- Hero -->
+    <section id="home" class="hero container">
+      <div>
+        <h1>HW Store — Sua loja de computadores</h1>
+        <p>Equipamentos, periféricos e componentes com entrega rápida e garantia. Explore ofertas e monte sua máquina ideal.</p>
+        <div class="hero-cta">
+          <a class="btn primary" href="#products" id="cta-products"><span class="material-icons" aria-hidden>view_list</span> Ver Produtos</a>
+          <button class="btn ghost" id="cta-account"><span class="material-icons" aria-hidden>person</span> Criar Conta</button>
+        </div>
+      </div>
+
+      <aside>
+        <div class="product-card" style="padding:1rem">
+          <div class="product-thumb" style="height:160px;border-radius:10px;display:flex;flex-direction:column;align-items:flex-start;padding:12px;justify-content:flex-end">
+            <div style="background:rgba(255,255,255,0.06);padding:.25rem .5rem;border-radius:8px;font-size:.8rem;color:inherit">Mais Procurado</div>
+            <div style="font-size:1.1rem;margin-top:.5rem">Ryzen 5 5500</div>
+          </div>
+
+          <div style="margin-top:.6rem">
+            <div class="price">R$ 499,00</div>
+            <div class="muted">3.6GHz (4.2GHz Max Turbo) • Cache 19MB, AM4, Sem Vídeo</div>
+          </div>
+        </div>
+      </aside>
+    </section>
+
+    <!-- Products -->
+    <section id="products" class="products container">
+      <h2>Produtos em destaque</h2>
+      <div class="grid" id="product-grid"></div>
+    </section>
+
+    <!-- Profile -->
+    <section id="profile" class="container" style="margin-top:1.25rem">
+      <h2>Perfil</h2>
+      <form class="profile-form" id="profile-form">
+        <label>Nome<input type="text" name="nome" id="profile-nome" placeholder="Seu nome"></label>
+        <label>Senha<input type="password" id="senha" placeholder="Senha"></label>
+        <label>Mostrar senha<input type="checkbox" id="toggle-eye"></label>
+        <label>Data Nasc.<input type="date" id="dob"></label>
+        <label>Telefone<input type="tel" id="phone" placeholder="(11) 9xxxx-xxxx"></label>
+        <label>CPF<input type="text" id="cpf" placeholder="000.000.000-00"></label>
+        <div style="grid-column:1 / -1;display:flex;gap:.5rem;justify-content:flex-end">
+          <button type="button" class="btn ghost" id="clear-profile">Limpar</button>
+          <button type="submit" class="btn primary">Salvar</button>
+        </div>
+      </form>
+    </section>
+
+  </main>
+
+  <footer class="footer">
+    <div>© HW Store</div>
+  </footer>
+
+  <!-- Offcanvas cart -->
+  <div class="offcanvas-backdrop" id="cart-backdrop" aria-hidden="true"></div>
+  <aside class="offcanvas" id="cart-panel" role="dialog" aria-modal="true" aria-labelledby="cart-title" aria-hidden="true">
+    <div style="display:flex;align-items:center;justify-content:space-between">
+      <div>
+        <div id="cart-title" style="font-weight:700">Seu carrinho</div>
+        <div class="muted" style="font-size:.85rem">Revisar itens e finalizar compra</div>
+      </div>
+      <div>
+        <button class="icon" id="close-cart" aria-label="Fechar"><span class="material-icons">close</span></button>
+      </div>
+    </div>
+
+    <div class="cart-list" id="cart-items-list" aria-live="polite"></div>
+
+    <div style="border-top:1px solid rgba(11,61,145,0.06);padding-top:.75rem;margin-top:.75rem">
+      <div style="display:flex;justify-content:space-between;align-items:center;font-weight:700;margin-bottom:.5rem">
+        <div>Subtotal</div>
+        <div id="cart-total">R$ 0,00</div>
+      </div>
+      <div style="display:flex;gap:.5rem">
+        <button class="btn ghost" id="clear-cart">Limpar carrinho</button>
+        <button class="btn primary" id="checkout-btn">Finalizar compra</button>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Modal product -->
+  <div class="modal-backdrop" id="modal-backdrop" aria-hidden="true">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem">
+        <h3 id="modal-title" style="margin:0">Detalhes do produto</h3>
+        <button class="icon" id="modal-close" aria-label="Fechar"><span class="material-icons">close</span></button>
+      </div>
+      <div class="modal-grid">
+        <div style="border-radius:10px;overflow:hidden">
+          <div id="modal-thumb" style="height:260px;background:#eef6ff;display:flex;align-items:center;justify-content:center;font-weight:700;color:var(--primary)"></div>
+        </div>
+        <div>
+          <div id="modal-desc"></div>
+          <div style="margin-top:1rem;display:flex;gap:.6rem;align-items:center">
+            <div class="price" id="modal-price" style="font-size:1.2rem;font-weight:800"></div>
+            <div class="muted" id="modal-stock">Em estoque</div>
+          </div>
+          <div style="margin-top:1rem;display:flex;gap:.5rem">
+            <button class="btn primary" id="modal-add">Adicionar ao carrinho</button>
+            <button class="btn ghost" id="modal-close-2">Fechar</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Chat & Weather widgets (in-menu triggers open these) -->
+  <div class="widget-panel" aria-hidden="true">
+    <div id="chatbox" role="region" aria-label="Chat de suporte">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding-bottom:.25rem">
+        <strong>Suporte</strong>
+        <button class="icon" id="close-chat" aria-label="Fechar chat"><span class="material-icons">close</span></button>
+      </div>
+      <div id="chat-messages"></div>
+      <div class="chat-input-row">
+        <input id="chat-input" class="chat-input" placeholder="Digite sua mensagem..." aria-label="Mensagem" />
+        <button class="btn primary" id="chat-send">Enviar</button>
+      </div>
+    </div>
+
+    <div id="weather-panel">
+      <div style="display:flex;justify-content:space-between;align-items:center;width:100%;">
+        <div style="display:flex;gap:.5rem;align-items:center">
+          <span class="material-icons" aria-hidden>cloud</span>
+          <div>
+            <div id="weather-city" style="font-weight:700">--</div>
+            <div id="weather-desc" class="muted" style="font-size:.95rem">--</div>
+          </div>
+        </div>
+        <button class="icon" id="close-weather" aria-label="Fechar clima"><span class="material-icons">close</span></button>
+      </div>
+      <div style="margin-top:.5rem;display:flex;justify-content:space-between;align-items:center">
+        <div style="font-size:1.6rem;font-weight:800" id="weather-temp">--</div>
+        <div id="weather-extra" class="muted" style="text-align:right;font-size:.9rem">--</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- socket.io client (servido pelo server.js) -->
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    // ---------------------------
+    // CONFIGURAÇÕES (edite aqui)
+    // ---------------------------
+    const OPENWEATHER_API_KEY ='65e9d132814171a4cc64579a6853f7c5';
+    const OPENWEATHER_UNITS = 'metric'; // metric -> Celsius
+
+    // ---------------------------
+    // Produtos (dados iniciais)
+    // ---------------------------
+    const products = [
+      {id:1,title:'AMD Ryzen 5 5500',price:499.00,desc:'3.6GHz (4.2GHz Max Turbo) • Cache 19MB, AM4, Sem Vídeo',img:'https://images.kabum.com.br/produtos/fotos/320799/processador-amd-ryzen-5-5500-cache-19mb-3-7ghz-4-2ghz-max-turbo-am4-100-100000457box_1647636796_gg.jpg'},
+      {id:2,title:'Mouse Attack Shark X11',price:199.00,desc:'Tri-Mode • 22000 DPI',img:'https://images.kabum.com.br/produtos/fotos/sync_mirakl/883179/xlarge/Mouse-Gamer-Sem-Fio-Attack-Shark-X11-22000-Dpi-59g-Tri-mode-Com-Dock-Magn-tico-RGB-Branco_1761677024.png'},
+      {id:3,title:'Teclado Mecânico AULA F75',price:349.00,desc:'Tri-Mode • Glacier Blue',img:'https://m.media-amazon.com/images/I/517m1ppzQ5L._AC_UF894,1000_QL80_.jpg'},
+      {id:4,title:'Monitor AOC 24" 180Hz',price:699.00,desc:'FHD • FreeSync',img:'https://pxinxa.com.br/wp-content/uploads/2025/05/produto-26964.jpg'},
+      {id:5,title:'SSD NVMe 1TB',price:499.00,desc:'Leit. 3500MB/s',img:'https://static.wixstatic.com/media/1d9c31_abade0ac2e74480a87dfb578e831ec51~mv2.jpg/v1/fill/w_980,h_980,al_c,q_85,usm_0.66_1.00_0.01,enc_avif,quality_auto/1d9c31_abade0ac2e74480a87dfb578e831ec51~mv2.jpg'},
+      {id:6,title:'MSI MAG 650W',price:399.00,desc:'80+ Bronze',img:'https://m.media-amazon.com/images/I/81eLlIQ5PsL.jpg'},
+      {id:7,title:'GeForce RTX 5060ti',price:2599.00,desc:'8GB GDDR7',img:'https://media.pichau.com.br/media/catalog/product/cache/2f958555330323e505eba7ce930bdf27/g/5/g506t-8gc2.jpg'},
+      {id:8,title:'Placa Mãe B550M Aorus Elite',price:799.00,desc:'AMD AM4, DDR4, M-ATX',img:'https://images.kabum.com.br/produtos/fotos/114781/placa-mae-gigabyte-b550m-aorus-elite-amd-am4-micro-atx-ddr4_1594908595_gg.jpg'},
+    ];
+
+    // ---------------------------
+    // Helpers
+    // ---------------------------
+    const $ = sel => document.querySelector(sel);
+    const formatBRL = n => Number(n).toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
+    const safeText = s => (typeof s === 'string') ? s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;') : '';
+
+    // ---------------------------
+    // Cart (localStorage)
+    // ---------------------------
+    const CART_KEY = 'hw_cart_v3';
+    function getCart(){ try { return JSON.parse(localStorage.getItem(CART_KEY)) || []; } catch(e){ return []; } }
+    function saveCart(c){ localStorage.setItem(CART_KEY, JSON.stringify(c)); updateCartIcon(); }
+    function addToCart(id, qty=1){ const cart = getCart(); const item = cart.find(x=>x.id===id); if(item) item.qty += qty; else cart.push({id,qty}); saveCart(cart); renderCartPanel(); }
+    function changeQty(id, delta){ const cart = getCart(); const idx = cart.findIndex(x=>x.id===id); if(idx === -1) return; cart[idx].qty += delta; if(cart[idx].qty <= 0) cart.splice(idx,1); saveCart(cart); renderCartPanel(); }
+    function clearCart(){ localStorage.removeItem(CART_KEY); renderCartPanel(); }
+    function cartCount(){ return getCart().reduce((s,i)=>s+i.qty,0); }
+    function cartTotal(){ return getCart().reduce((sum,i)=>{ const p = products.find(x=>x.id===i.id); return sum + (p ? p.price * i.qty : 0); },0); }
+
+    // ---------------------------
+    // Render products
+    // ---------------------------
+    const grid = $('#product-grid');
+    function renderProducts(list=products){ grid.innerHTML = '';
+      list.forEach(p=>{
+        const card = document.createElement('article');
+        card.className = 'product-card';
+        card.innerHTML = `
+          <div class="product-thumb" role="img" aria-label="Imagem ${safeText(p.title)}">
+            <img src="${p.img}" alt="${safeText(p.title)}" style="width:100%;height:100%;object-fit:cover;border-radius:8px">
+          </div>
+          <div>
+            <h3 style="margin:.2rem 0">${safeText(p.title)}</h3>
+            <div class="muted" style="font-size:.95rem">${safeText(p.desc)}</div>
+          </div>
+          <div class="product-meta">
+            <div class="price">${formatBRL(p.price)}</div>
+            <div style="display:flex;gap:.5rem;align-items:center">
+              <button class="btn ghost" data-id="${p.id}" data-action="view">Detalhes</button>
+              <button class="btn primary" data-id="${p.id}" data-action="add"><span class="material-icons" style="font-size:18px">add_shopping_cart</span>Adicionar</button>
+            </div>
+          </div>
+        `;
+        grid.appendChild(card);
+      });
+    }
+
+    // ---------------------------
+    // Cart panel
+    // ---------------------------
+    const cartPanel = $('#cart-panel');
+    const cartBackdrop = $('#cart-backdrop');
+
+    function updateCartIcon(){ const count = cartCount(); const badge = $('#cart-count'); if(count>0){ badge.style.display='inline-flex'; badge.textContent = count; } else badge.style.display='none'; $('#cart-total').textContent = formatBRL(cartTotal()); }
+
+    function renderCartPanel(){ const listEl = $('#cart-items-list'); const cart = getCart(); if(!cart.length){ listEl.innerHTML = '<div class="muted">Seu carrinho está vazio.</div>'; updateCartIcon(); return; } listEl.innerHTML = ''; cart.forEach(item=>{ const p = products.find(x=>x.id===item.id); if(!p) return; const row = document.createElement('div'); row.className='cart-item'; row.innerHTML = `
+        <div class="thumb"><img src="${p.img}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:6px"></div>
+        <div style="flex:1">
+          <div style="font-weight:700">${safeText(p.title)}</div>
+          <div class="muted">${formatBRL(p.price)} x ${item.qty} <span style="font-weight:700">•</span> Subtotal ${formatBRL(p.price*item.qty)}</div>
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:.4rem">
+          <div class="qty-controls" role="group" aria-label="Quantidade">
+            <button class="btn" data-action="dec" data-id="${p.id}">-</button>
+            <div style="padding:.15rem .5rem;border-radius:6px;border:1px solid rgba(11,61,145,0.06);min-width:34px;text-align:center">${item.qty}</div>
+            <button class="btn" data-action="inc" data-id="${p.id}">+</button>
+          </div>
+          <button class="btn" data-action="remove" data-id="${p.id}" style="font-size:.85rem;color:var(--muted)">Remover</button>
+        </div>
+      `; listEl.appendChild(row);
+      });
+
+      // add handlers
+      listEl.querySelectorAll('[data-action="inc"]').forEach(b=>b.addEventListener('click', e=> changeQty(Number(e.currentTarget.dataset.id),1)));
+      listEl.querySelectorAll('[data-action="dec"]').forEach(b=>b.addEventListener('click', e=> changeQty(Number(e.currentTarget.dataset.id),-1)));
+      listEl.querySelectorAll('[data-action="remove"]').forEach(b=>b.addEventListener('click', e=>{ const id=Number(e.currentTarget.dataset.id); const cart = getCart(); const idx = cart.findIndex(x=>x.id===id); if(idx>-1){ cart.splice(idx,1); saveCart(cart); renderCartPanel(); }}));
+
+      updateCartIcon();
+    }
+
+    // open/close cart
+    $('#open-cart').addEventListener('click', ()=>{ cartPanel.classList.add('open'); cartBackdrop.classList.add('open'); cartPanel.setAttribute('aria-hidden','false'); cartBackdrop.setAttribute('aria-hidden','false'); renderCartPanel(); });
+    $('#close-cart').addEventListener('click', ()=> closeCart());
+    $('#cart-backdrop').addEventListener('click', ()=> closeCart());
+    function closeCart(){ cartPanel.classList.remove('open'); cartBackdrop.classList.remove('open'); cartPanel.setAttribute('aria-hidden','true'); cartBackdrop.setAttribute('aria-hidden','true'); }
+    document.addEventListener('keydown', e=>{ if(e.key === 'Escape') closeModals(); });
+
+    // ---------------------------
+    // Product modal
+    // ---------------------------
+    const modalBackdrop = $('#modal-backdrop');
+    let activeProduct = null;
+    function openModal(prod){ activeProduct = prod; $('#modal-title').textContent = prod.title; $('#modal-desc').innerHTML = `<p class="muted">${safeText(prod.desc)}</p>`; $('#modal-price').textContent = formatBRL(prod.price); $('#modal-thumb').innerHTML = `<img src="${prod.img}" alt="${safeText(prod.title)}" style="width:100%;height:100%;object-fit:cover;border-radius:8px">`; modalBackdrop.classList.add('open'); modalBackdrop.setAttribute('aria-hidden','false'); }
+    function closeModals(){ modalBackdrop.classList.remove('open'); modalBackdrop.setAttribute('aria-hidden','true'); closeCart(); }
+    $('#modal-close').addEventListener('click', closeModals); $('#modal-close-2').addEventListener('click', closeModals);
+    $('#modal-add').addEventListener('click', ()=>{ if(activeProduct) addToCart(activeProduct.id); closeModals(); });
+
+    // delegate product grid actions
+    grid.addEventListener('click', e=>{
+      const btn = e.target.closest('button'); if(!btn) return; const id = Number(btn.dataset.id); const action = btn.dataset.action;
+      if(action === 'add') addToCart(id);
+      if(action === 'view') { const p = products.find(x=>x.id===id); if(p) openModal(p); }
+    });
+
+    // search/filter
+    $('#search-input').addEventListener('input', e=>{
+      const term = e.target.value.trim().toLowerCase(); if(!term) renderProducts(); else renderProducts(products.filter(p=> p.title.toLowerCase().includes(term) || p.desc.toLowerCase().includes(term)));
+    });
+
+    // theme toggle
+    $('#theme-toggle').addEventListener('click', ()=>{
+      document.body.classList.toggle('dark'); const pressed = $('#theme-toggle').getAttribute('aria-pressed') === 'true'; $('#theme-toggle').setAttribute('aria-pressed', String(!pressed));
+    });
+
+    // mobile menu
+    $('#menu-toggle').addEventListener('click', e=>{ const open = e.currentTarget.getAttribute('aria-expanded') === 'true'; e.currentTarget.setAttribute('aria-expanded', String(!open)); const mn = $('#mobile-nav'); mn.style.display = open ? 'none' : 'block'; });
+
+    // profile behaviors
+    $('#toggle-eye').addEventListener('change', e=>{ const s = $('#senha'); if(s) s.type = e.target.checked ? 'text' : 'password'; });
+    $('#cpf').addEventListener && $('#cpf').addEventListener('input', e=>{ let v = e.target.value.replace(/\D/g,'').slice(0,11); v = v.replace(/(\d{3})(\d)/,'$1.$2'); v = v.replace(/(\d{3})(\d)/,'$1.$2'); v = v.replace(/(\d{3})(\d{1,2})$/,'$1-$2'); e.target.value = v; });
+
+    // profile save/clear
+    $('#profile-form').addEventListener('submit', e=>{ e.preventDefault(); const nome = $('#profile-nome').value.trim(); localStorage.setItem('hw_profile_name', nome); alert('Perfil salvo localmente.'); });
+    $('#clear-profile').addEventListener('click', ()=>{ $('#profile-form').reset(); localStorage.removeItem('hw_profile_name'); });
+
+    // checkout simulation
+    $('#checkout-btn').addEventListener('click', ()=>{
+      const total = cartTotal(); if(total <= 0){ alert('Seu carrinho está vazio.'); return; }
+      alert('Simulação de checkout — Total: ' + formatBRL(total)); clearCart(); closeCart();
+    });
+    $('#clear-cart').addEventListener('click', ()=>{ if(confirm('Limpar todo o carrinho?')) clearCart(); });
+
+    // init
+    renderProducts(); renderCartPanel(); updateCartIcon();
+
+    // prefills
+    window.addEventListener('DOMContentLoaded', ()=>{
+      const name = localStorage.getItem('hw_profile_name'); if(name) $('#profile-nome').value = name;
+    });
+
+    // ---------------------------
+    // WEATHER (OpenWeather) - abre quando clicar em "Clima" no menu
+    // ---------------------------
+    async function fetchWeatherByCoords(lat, lon){
+      if(!OPENWEATHER_API_KEY || OPENWEATHER_API_KEY.includes('COLE_SUA')){ $('#weather-city').textContent = 'API key não configurada'; $('#weather-desc').textContent='Insira sua chave OpenWeather'; return; }
+      try{
+        const url = `https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lon}&units=${OPENWEATHER_UNITS}&lang=pt_br&appid=${OPENWEATHER_API_KEY}`;
+        const res = await fetch(url); if(!res.ok) throw new Error('Falha ao buscar clima');
+        const data = await res.json();
+        $('#weather-city').textContent = `${data.name}, ${data.sys && data.sys.country ? data.sys.country : ''}`;
+        $('#weather-desc').textContent = `${data.weather && data.weather[0] ? data.weather[0].description : ''}`;
+        $('#weather-temp').textContent = `${Math.round(data.main.temp)}°C`;
+        $('#weather-extra').textContent = `Vento ${Math.round(data.wind.speed)} m/s • Humidade ${data.main.humidity}%`;
+      }catch(err){ console.error(err); $('#weather-city').textContent = 'Erro'; $('#weather-desc').textContent = 'Não foi possível obter o clima'; }
+    }
+
+    async function openWeatherPanel(){
+      const panel = $('#weather-panel');
+      panel.style.display = panel.style.display === 'flex' || panel.classList.contains('open') ? 'none' : 'flex';
+      if(panel.style.display === 'flex'){
+        // tentar geolocalização do browser
+        if(navigator.geolocation){
+          navigator.geolocation.getCurrentPosition(pos=>{ fetchWeatherByCoords(pos.coords.latitude,pos.coords.longitude); }, err=>{ // fallback São Paulo
+            fetchWeatherByCoords(-23.55052,-46.633308);
+          }, {timeout:7000});
+        } else {
+          fetchWeatherByCoords(-23.55052,-46.633308);
+        }
+      }
+    }
+
+    $('#open-weather-btn').addEventListener('click', e=>{ e.preventDefault(); openWeatherPanel(); });
+    $('#close-weather').addEventListener('click', ()=>{ $('#weather-panel').style.display='none'; });
+
+    // ---------------------------
+    // CHAT (Socket.IO)
+    // ---------------------------
+    // cliente tenta conectar ao servidor Socket.IO servido pelo mesmo origin
+    let socket = null;
+    function initSocket(){
+      try{
+        socket = io(); // conecta ao mesmo host
+        socket.on('connect', ()=>{
+          addSystemMessage('Conectado ao servidor de chat.');
+        });
+        socket.on('disconnect', ()=> addSystemMessage('Desconectado.'));
+        socket.on('chat:message', payload => {
+          addChatMessage('bot', payload.text);
+        });
+      }catch(err){ console.warn('Socket.IO não disponível', err); addSystemMessage('Servidor de chat não disponível'); }
+    }
+
+    function addSystemMessage(text){ const m = document.createElement('div'); m.className='chat-message bot'; m.style.opacity=0.8; m.textContent=text; $('#chat-messages').appendChild(m); $('#chat-messages').scrollTop = $('#chat-messages').scrollHeight; }
+    function addChatMessage(who, text){ const m = document.createElement('div'); m.className='chat-message '+(who==='user'?'user':'bot'); m.textContent = text; $('#chat-messages').appendChild(m); $('#chat-messages').scrollTop = $('#chat-messages').scrollHeight; }
+
+    // abrir/fechar chat UI
+    $('#open-chat-btn').addEventListener('click', e=>{ e.preventDefault(); const box = $('#chatbox'); box.style.display = box.style.display === 'flex' ? 'none' : 'flex'; if(box.style.display === 'flex'){ initSocket(); } });
+    $('#close-chat').addEventListener('click', ()=>{ $('#chatbox').style.display='none'; if(socket) socket.disconnect(); socket=null; });
+
+    // enviar mensagem
+    $('#chat-send').addEventListener('click', ()=> sendChat());
+    $('#chat-input').addEventListener('keydown', e=>{ if(e.key === 'Enter') sendChat(); });
+    function sendChat(){ const txt = $('#chat-input').value.trim(); if(!txt) return; addChatMessage('user', txt); $('#chat-input').value='';
+      if(socket && socket.connected){ socket.emit('chat:message', { text: txt }); }
+      else { // fallback local simulated reply
+        setTimeout(()=> addChatMessage('bot','Atendente: Recebemos sua mensagem (modo local).'), 600);
+      }
+    }
+
+    // ---------------------------
+    // Auto-save profile name
+    // ---------------------------
+    window.addEventListener('DOMContentLoaded', ()=>{
+      const name = localStorage.getItem('hw_profile_name'); if(name) $('#profile-nome').value = name;
+    });
+
+  </script>
+
+  <!--
+    ---------------------------
+    SERVER (node/express/socket.io)
+    ---------------------------
+    Copie o bloco abaixo para um arquivo `server.js` na raiz do projeto.
+
+    npm init -y
+    npm install express socket.io
+    node server.js
+
+    O servidor serve a pasta `public/` (onde coloque index.html) e inicializa Socket.IO.
+  -->
+
+  <script type="text/plain" id="server-js">
+// server.js
+const express = require('express');
+const path = require('path');
+const http = require('http');
+const { Server } = require('socket.io');
+
+const app = express();
+const server = http.createServer(app);
+const io = new Server(server);
+
+const PORT = process.env.PORT || 3000;
+
+app.use(express.static(path.join(__dirname, 'public')));
+
+io.on('connection', (socket) => {
+  console.log('Novo cliente conectado', socket.id);
+
+  socket.on('chat:message', (msg) => {
+    console.log('mensagem recebida:', msg);
+    // exemplo: ecoa de volta para quem enviou e para outros
+    socket.emit('chat:message', { text: 'Atendente (eco): ' + msg.text });
+    socket.broadcast.emit('chat:message', { text: 'Atendente (ao público): ' + msg.text });
+  });
+
+  socket.on('disconnect', () => {
+    console.log('cliente desconectou', socket.id);
+  });
+});
+
+server.listen(PORT, () => console.log(`Servidor rodando em http://localhost:${PORT}`));
+  </script>
+
+  <script src="assets/js/improvements.js"></script>
+</body>
+</html>
