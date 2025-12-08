@@ -6,26 +6,60 @@ const GoogleStrategy = require('passport-google-oauth20').Strategy;
 const cookieSession = require('cookie-session');
 const cors = require('cors');
 const bodyParser = require('body-parser');
-const User = require('./models/User');
 const jwt = require('jsonwebtoken');
-const fetch = (...args) => import('node-fetch').then(({ default: fetch }) => fetch(...args));
+const path = require('path');
+const http = require('http');
+const { Server } = require('socket.io');
+const User = require('./models/User');
+
+// fetch compatível com Render
+const fetch = (...args) =>
+  import('node-fetch').then(({ default: fetch }) => fetch(...args));
 
 const app = express();
+const server = http.createServer(app);
+
+/* =====================================
+   SOCKET.IO
+===================================== */
+const io = new Server(server, {
+  cors: { origin: true, methods: ['GET', 'POST'] },
+});
+
+io.on('connection', (socket) => {
+  socket.on('chat-message', (msg) => io.emit('chat-message', msg));
+});
+
+/* =====================================
+   MIDDLEWARES
+===================================== */
 app.use(cors({ origin: true, credentials: true }));
 app.use(bodyParser.json());
 
-// connect mongo
-const MONGO = process.env.MONGO_URI || 'mongodb://localhost:27017/hw_store';
+/* =====================================
+   FRONTEND
+===================================== */
+app.use(express.static(path.join(__dirname, 'public')));
+
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public/index.html'));
+});
+
+/* =====================================
+   MONGODB
+===================================== */
 mongoose
-  .connect(MONGO, { useNewUrlParser: true, useUnifiedTopology: true })
-  .then(() => console.log('mongo connected'))
+  .connect(process.env.MONGO_URI)
+  .then(() => console.log('Mongo conectado'))
   .catch((e) => console.error(e));
 
-// sessions for passport
+/* =====================================
+   SESSION + PASSPORT
+===================================== */
 app.use(
   cookieSession({
     name: 'session',
-    keys: [process.env.SESSION_SECRET || 'devsecret'],
+    keys: [process.env.SESSION_SECRET],
     maxAge: 24 * 60 * 60 * 1000,
   })
 );
@@ -33,128 +67,119 @@ app.use(
 app.use(passport.initialize());
 app.use(passport.session());
 
-passport.serializeUser((user, done) => {
-  done(null, user.id);
-});
+passport.serializeUser((user, done) => done(null, user.id));
 passport.deserializeUser(async (id, done) => {
-  try {
-    const u = await User.findById(id);
-    done(null, u);
-  } catch (e) {
-    done(e);
-  }
+  const user = await User.findById(id);
+  done(null, user);
 });
 
 passport.use(
   new GoogleStrategy(
     {
-      clientID: process.env.GOOGLE_CLIENT_ID || '<GOOGLE_CLIENT_ID>',
-      clientSecret: process.env.GOOGLE_CLIENT_SECRET || '<GOOGLE_CLIENT_SECRET>',
-      callbackURL: process.env.GOOGLE_CALLBACK || 'http://localhost:4000/api/auth/google/callback',
+      clientID: process.env.GOOGLE_CLIENT_ID,
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+      callbackURL: `${process.env.BASE_URL}/api/auth/google/callback`,
     },
-    async (accessToken, refreshToken, profile, done) => {
-      try {
-        let user = await User.findOne({ googleId: profile.id });
-        if (!user) {
-          user = new User({
-            googleId: profile.id,
-            name: profile.displayName,
-            email: (profile.emails && profile.emails[0] && profile.emails[0].value) || '',
-          });
-          await user.save();
-        }
-        done(null, user);
-      } catch (e) {
-        done(e);
+    async (_, __, profile, done) => {
+      let user = await User.findOne({ googleId: profile.id });
+      if (!user) {
+        user = await User.create({
+          googleId: profile.id,
+          name: profile.displayName,
+          email: profile.emails?.[0]?.value,
+        });
       }
+      done(null, user);
     }
   )
 );
 
-// ===============================
-//      GOOGLE AUTH ROUTES
-// ===============================
-
-app.get('/api/auth/google', passport.authenticate('google', { scope: ['profile', 'email'] }));
+/* =====================================
+   AUTH
+===================================== */
+app.get(
+  '/api/auth/google',
+  passport.authenticate('google', { scope: ['profile', 'email'] })
+);
 
 app.get(
   '/api/auth/google/callback',
   passport.authenticate('google', { failureRedirect: '/' }),
   (req, res) => {
     const token = jwt.sign(
-      { id: req.user._id, name: req.user.name },
-      process.env.JWT_SECRET || 'jwtsecret',
+      { id: req.user._id },
+      process.env.JWT_SECRET,
       { expiresIn: '7d' }
     );
 
-    const redirectURL =
-      process.env.FRONTEND_URL
-        ? process.env.FRONTEND_URL + '/?token=' + token
-        : 'http://localhost:5173/?token=' + token;
-
-    res.redirect(redirectURL);
+    res.redirect(`/?token=${token}`);
   }
 );
 
-// ===============================
-//      API LOCAL LOGIN (DEMO)
-// ===============================
+/* =====================================
+   LOGIN LOCAL
+===================================== */
 app.post('/api/auth/login', async (req, res) => {
-  const { username, password } = req.body;
-  const u = await User.findOne({ email: username });
-  if (!u) return res.status(401).json({ message: 'Usuário não encontrado' });
+  const { email } = req.body;
+  const user = await User.findOne({ email });
+
+  if (!user) return res.status(401).json({ message: 'Usuário não encontrado' });
 
   const token = jwt.sign(
-    { id: u._id, name: u.name },
-    process.env.JWT_SECRET || 'jwtsecret',
+    { id: user._id },
+    process.env.JWT_SECRET,
     { expiresIn: '7d' }
   );
 
-  res.json({ token, user: { id: u._id, name: u.name, email: u.email } });
+  res.json({ token, user });
 });
 
-// ===============================
-//      USER INFO ROUTE
-// ===============================
+/* =====================================
+   USER
+===================================== */
 app.get('/api/me', async (req, res) => {
-  const auth = req.headers.authorization;
-  if (!auth) return res.status(401).json({ message: 'no auth' });
-
-  const token = auth.split(' ')[1];
   try {
-    const data = jwt.verify(token, process.env.JWT_SECRET || 'jwtsecret');
-    const u = await User.findById(data.id).select('-__v');
-    res.json({ user: u });
-  } catch (e) {
-    res.status(401).json({ message: 'invalid token' });
+    const token = req.headers.authorization.split(' ')[1];
+    const data = jwt.verify(token, process.env.JWT_SECRET);
+    const user = await User.findById(data.id);
+    res.json(user);
+  } catch {
+    res.status(401).json({ message: 'Token inválido' });
   }
 });
 
-// ===============================
-//      WEATHER API (OpenWeather)
-// ===============================
+/* =====================================
+   ✅ OPENWEATHER (FUNCIONANDO)
+===================================== */
 app.get('/api/weather/:city', async (req, res) => {
   try {
-    const API_KEY = process.env.OPENWEATHER_API_KEY;
-
-    if (!API_KEY) {
-      return res.status(500).json({ error: 'API key não definida no backend (.env)' });
+    if (!process.env.OPENWEATHER_API_KEY) {
+      return res.status(500).json({ error: 'API KEY ausente' });
     }
 
     const city = req.params.city;
-    const url = `https://api.openweathermap.org/data/2.5/weather?q=${city}&units=metric&appid=${API_KEY}`;
+    const url =
+      `https://api.openweathermap.org/data/2.5/weather` +
+      `?q=${encodeURIComponent(city)}` +
+      `&units=metric&appid=${process.env.OPENWEATHER_API_KEY}`;
 
     const response = await fetch(url);
     const data = await response.json();
-    res.json(data);
 
-  } catch (err) {
-    res.status(500).json({ error: 'Erro ao buscar dados do clima.' });
+    if (!response.ok) {
+      return res.status(response.status).json(data);
+    }
+
+    res.json(data);
+  } catch (e) {
+    res.status(500).json({ error: 'Erro ao buscar clima' });
   }
 });
 
-// ===============================
-//      START SERVER
-// ===============================
+/* =====================================
+   START SERVER (RENDER)
+===================================== */
 const PORT = process.env.PORT || 4000;
-app.listen(PORT, () => console.log('Server listening on', PORT));
+server.listen(PORT, () =>
+  console.log('Servidor rodando na porta ' + PORT)
+);
